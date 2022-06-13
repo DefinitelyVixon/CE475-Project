@@ -1,14 +1,10 @@
 import pandas as pd
+import warnings
 from itertools import combinations
-from sklearn.metrics import mean_absolute_error, make_scorer
 from IPython.display import display
 from sklearn.preprocessing import PolynomialFeatures
-import warnings
-
 
 warnings.filterwarnings("ignore", category=UserWarning)
-ecm = make_scorer(mean_absolute_error)
-ecm_name = 'mae'
 cv_value = 5
 
 
@@ -26,15 +22,15 @@ class ModelResult:
 class ModelResultsTable:
     def __init__(self):
         self.all_model_results = {}
-        self.model_results_with_best_params = []
+        self.model_results_with_best_params = {}
 
     def add_model(self, model_results: list):
         sorted_models = list(sorted(model_results, key=lambda item: item.error))
         best_performing_var = sorted_models[0]
         self.all_model_results[best_performing_var.model] = sorted_models
-        self.model_results_with_best_params.append(best_performing_var)
-        self.model_results_with_best_params = list(sorted(self.model_results_with_best_params,
-                                                          key=lambda item: item.error))
+        self.model_results_with_best_params[best_performing_var.model] = best_performing_var
+        self.model_results_with_best_params = dict(sorted(self.model_results_with_best_params.items(),
+                                                          key=lambda item: item[1].error))
 
     def error_table(self, transpose=False, model='best', top=1000, return_table=False, display_table=True):
         if model == 'all':
@@ -42,24 +38,31 @@ class ModelResultsTable:
             for model_result in self.all_model_results.values():
                 error_table.extend([[result.error, result.model, result.predictors, result.arg]
                                     for result in model_result[:top]])
-            error_table = pd.DataFrame(error_table, columns=[ecm_name, 'model', 'predictors', 'arg'])
-            error_table.sort_values(by=[ecm_name], inplace=True, ignore_index=True)
+            error_table = pd.DataFrame(error_table, columns=['error', 'model', 'predictors', 'arg'])
+            error_table.sort_values(by=['error'], inplace=True, ignore_index=True)
         elif model == 'best':
-            model_indexes = [model_result.model for model_result in self.model_results_with_best_params[:top]]
+            model_indexes = [model_result.model for model_result in
+                             list(self.model_results_with_best_params.values())[:top]]
             error_table = pd.DataFrame([[result.arg, result.predictors, result.error]
-                                        for result in self.model_results_with_best_params[:top]],
-                                       columns=['args', 'predictors', ecm_name], index=model_indexes)
+                                        for result in list(self.model_results_with_best_params.values())[:top]],
+                                       columns=['args', 'predictors', 'error'], index=model_indexes)
         else:
             arg_indexes = [model_result.arg for model_result in self.all_model_results[model][:top]]
             error_table = pd.DataFrame([[result.predictors, result.error]
                                         for result in self.all_model_results[model][:top]],
-                                       columns=['predictors', ecm_name], index=arg_indexes)
+                                       columns=['predictors', 'error'], index=arg_indexes)
         if transpose:
             error_table = error_table.transpose()
         if display_table:
             display(error_table)
         if return_table:
             return error_table
+
+    def update_selected_model(self, model, index):
+        selected_model = list(self.all_model_results[model])[index]
+        self.model_results_with_best_params[model] = selected_model
+        self.model_results_with_best_params = dict(sorted(self.model_results_with_best_params.items(),
+                                                          key=lambda item: item[1].error))
 
 
 class ModelTree:
@@ -191,6 +194,31 @@ class ModelTree:
         print('Total CV Score (MAE) =', round(cv_error, 2))
         display(decision_df)
 
+    def return_model_result(self):
+        m_args = []
+        m_predictors = []
+        m_error = []
+        m_predicted_df = pd.DataFrame(columns=['SampleNo', 'Predicted'])
+        for model_tree_result, sample_indexes in zip(self.leaf_models,
+                                                     [cond_set.index for cond_set in self.conditional_sets]):
+            m_args.append(model_tree_result.arg)
+            m_predictors.append(model_tree_result.predictors)
+            m_error.append(model_tree_result.error)
+
+            leaf_predictions = pd.DataFrame({'SampleNo': sample_indexes, 'Predicted': model_tree_result.predicted})
+            m_predicted_df = pd.concat([m_predicted_df, leaf_predictions])
+
+        sorted_predictions = m_predicted_df.sort_values('SampleNo')
+        sorted_predictions.index = sorted_predictions['SampleNo'] + 1
+        sorted_predictions = sorted_predictions['Predicted'].astype('int')
+
+        return ModelResult({'model': 'model_tree_regression(?)',
+                            'arg': m_args,
+                            'predictors': m_predictors,
+                            'predicted': sorted_predictions,
+                            'error': sum(m_error),
+                            'estimator': self})
+
 
 def get_combinations(inputs, min_element=2):
     p_comb = []
@@ -227,3 +255,13 @@ def subplot_for_five(data, predictors, title=None, highlight=None, reg_plot=None
 
 def split_by_threshold(ss, predictor, threshold):
     return ss[ss[predictor] < threshold], ss[ss[predictor] >= threshold]
+
+
+def show_predictions(predictions: pd.DataFrame, display_df=True, filepath=None):
+    predictions['Predictions'] = predictions['Predictions'].round(0).astype('int')
+    if filepath is not None:
+        predictions.to_csv(filepath, header=False, index=False)
+    if display_df:
+        predictions.insert(loc=0, column='SampleNo', value=predictions.index + 1)
+        with pd.option_context('display.max_rows', None):
+            display(predictions.style.hide())

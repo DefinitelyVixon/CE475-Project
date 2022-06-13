@@ -1,6 +1,5 @@
 from itertools import combinations
-
-from sklearn.preprocessing import PolynomialFeatures
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import cross_val_score, cross_val_predict
 from sklearn.metrics import make_scorer, mean_absolute_error
@@ -98,13 +97,24 @@ ax = fig.add_subplot(1, 1, 1, projection='3d')
 ax.view_init(elev=2., azim=-100)
 ax.set_box_aspect(aspect=None, zoom=1.35)
 
-ax.scatter(x3_data['x3'], x3_data['x1'], x3_data['Y'], c=x3_data['Y'])
-ax.plot_trisurf(x3_data['x3'], x3_data['x1'], target_model.predicted,
-                linewidth=0, antialiased=True, alpha=0.3, color='r')
+# ax.scatter(x3_data['x3'], x3_data['x1'], x3_data['Y'], c=x3_data['Y'])
+# ax.plot_trisurf(x3_data['x3'], x3_data['x1'], target_model.predicted,
+#                 linewidth=0, antialiased=True, alpha=0.3, color='r')
+
+x = dataset[['x1', 'x2', 'x3', 'x4', 'x5']]
+scaler = StandardScaler()
+x = pd.DataFrame(scaler.fit_transform(x), columns=x.columns)
+ax.scatter(x['x3'], x['x1'], x['x5'], c=dataset['Y'], cmap='hot')
+
+fig = plt.figure(figsize=(18, 5))
+ax = fig.add_subplot(1, 1, 1, projection='3d')
+ax.view_init(elev=2., azim=-100)
+ax.set_box_aspect(aspect=None, zoom=1.35)
+ax.scatter(dataset['x3'], dataset['x1'], dataset['x5'], c=dataset['Y'], cmap='hot')
 
 ax.set_xlabel('x3')
 ax.set_ylabel('x1')
-ax.set_zlabel('Y')
+ax.set_zlabel('x5')
 plt.show()
 
 # predictions = predictions.sort_values('SampleNo')
